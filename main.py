@@ -1,51 +1,75 @@
-import numpy as np
+# entrenamiento.py
 import cv2
 import os
+import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense, Conv2D, Flatten
+from keras.layers import Dense, Conv2D, MaxPool2D, Flatten
+from sklearn.model_selection import train_test_split
 
-# Directorios de datasets
-ruta_base_datos = '/datasets_residuos'
-categorias = ['papel', 'plastico', 'organico']
+class PreprocesadoDatos:
+    """Clase para preprocesar los datos"""
 
-# Carga de datos de entrenamiento
-datos = []
-etiquetas = []
+    def __init__(self):
+        self.ruta_base_datos = os.path.join("datos", "entrenamiento")
+        self.dimensiones_imagen = (150, 150, 3)
+        self.categorias = ['papel', 'vidrio', 'plastico']
 
-for categoria in categorias:
+    def cargar_datos(self):
+        datos = []
+        etiquetas = []
 
-    ruta_imgs = os.path.join(ruta_base_datos, categoria)
+        for categoria_id, categoria in enumerate(self.categorias):
+            ruta_categoria = os.path.join(self.ruta_base_datos, categoria)
 
-    for img in os.listdir(ruta_imgs):
+            for imagen in os.listdir(ruta_categoria):
+                ruta_imagen = os.path.join(ruta_categoria, imagen)
+                img = cv2.imread(ruta_imagen)
+                img = cv2.resize(img, self.dimensiones_imagen[:2])
+                datos.append(img)
+                etiquetas.append(categoria_id)
 
-        # Leo imagen
-        ruta_img = os.path.join(ruta_imgs, img)
-        img_array = cv2.imread(ruta_img)
+        return np.array(datos), np.array(etiquetas)
 
-        # Agrego a datos
-        datos.append(img_array)
+class ModeloCNN:
+    """Clase para el modelo convolucional"""
 
-        # Defino etiqueta segun carpeta
-        if categoria == 'papel':
-            etiquetas.append(0)
-        elif categoria == 'plastico':
-            etiquetas.append(1)
-        else:
-            etiquetas.append(2)
+    def __init__(self):
+        self.modelo = self.constructor_modelo()
 
-datos = np.array(datos)
-etiquetas = np.array(etiquetas)
+    def constructor_modelo(self):
+        modelo = Sequential()
+        modelo.add(Conv2D(32, (3, 3), input_shape=(150, 150, 3), activation='relu'))
+        modelo.add(MaxPool2D(pool_size=(2, 2)))
 
-# Defino y entreno el modelo
-modelo = Sequential()
-modelo.add(Conv2D(32, 3, 3, activation='relu', input_shape=(150, 150, 3)))
-modelo.add(Flatten())
-modelo.add(Dense(3, activation='softmax'))
+        modelo.add(Conv2D(64, (3, 3), activation='relu'))
+        modelo.add(MaxPool2D(pool_size=(2, 2)))
 
-modelo.compile(optimizer='adam',
-               loss='sparse_categorical_crossentropy',
-               metrics=['accuracy'])
+        modelo.add(Conv2D(128, (3, 3), activation='relu'))
+        modelo.add(MaxPool2D(pool_size=(2, 2)))
 
-modelo.fit(datos, etiquetas, epochs=10)
+        modelo.add(Flatten())
+        modelo.add(Dense(128, activation='relu'))
+        modelo.add(Dense(3, activation='softmax'))
 
-modelo.save('modelo_custom.h5')
+        modelo.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+        return modelo
+
+    def entrenar(self, datos, etiquetas):
+        # Dividir los datos en conjuntos de entrenamiento y prueba
+        X_train, X_test, y_train, y_test = train_test_split(datos, etiquetas, test_size=0.2, random_state=42, stratify=None)
+
+        # Entrenar el modelo
+        self.modelo.fit(X_train, y_train, epochs=50, validation_data=(X_test, y_test))
+
+    def guardar(self, ubicacion_pesos):
+        self.modelo.save(ubicacion_pesos)
+
+# Programa principal
+if __name__ == "__main__":
+    proc = PreprocesadoDatos()
+    datos, etiquetas = proc.cargar_datos()
+
+    modelo_cnn = ModeloCNN()
+    modelo_cnn.entrenar(datos, etiquetas)
+    modelo_cnn.guardar(os.path.join("Main", "modelo_entrenado.h5"))
